@@ -42,6 +42,7 @@ public enum QueryExecutionState: Equatable, Sendable {
     case empty
     case running(requestID: UUID)
     case success(
+        resultID: UUID,
         columns: [QueryResultColumn],
         rows: [[String]],
         rowsAffected: UInt64,
@@ -51,7 +52,7 @@ public enum QueryExecutionState: Equatable, Sendable {
     case failure(message: String)
 
     public var rowCount: Int {
-        guard case let .success(_, rows, _, _, _) = self else {
+        guard case let .success(_, _, rows, _, _, _) = self else {
             return 0
         }
         return rows.count

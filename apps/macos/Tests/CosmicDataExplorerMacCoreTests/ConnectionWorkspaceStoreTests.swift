@@ -75,6 +75,98 @@ final class ConnectionWorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.tab(id: secondTab, connectionID: "scratch")?.resultState.rowCount, 0)
     }
 
+    func testAcceptedIdenticalResultsKeepDistinctSuccessIdentity() {
+        let store = ConnectionWorkspaceStore()
+        let firstTab = store.addSQLTab(for: "scratch")
+        let secondTab = store.addSQLTab(for: "scratch")
+        let firstRequest = UUID()
+        let secondRequest = UUID()
+        let result = QueryResultEnvelope.success(
+            columns: [QueryResultColumn(name: "name", typeName: "TEXT", nullable: nil)],
+            rows: [["Ada"]],
+            rowsAffected: 0,
+            elapsedMs: 4,
+            truncated: false
+        )
+
+        store.markRunning(tabID: firstTab, connectionID: "scratch", requestID: firstRequest)
+        store.markRunning(tabID: secondTab, connectionID: "scratch", requestID: secondRequest)
+
+        store.applyResult(result, tabID: firstTab, connectionID: "scratch", requestID: firstRequest)
+        store.applyResult(result, tabID: secondTab, connectionID: "scratch", requestID: secondRequest)
+
+        guard
+            case let .success(firstResultID, _, _, _, _, _)? = store.tab(
+                id: firstTab,
+                connectionID: "scratch"
+            )?.resultState,
+            case let .success(secondResultID, _, _, _, _, _)? = store.tab(
+                id: secondTab,
+                connectionID: "scratch"
+            )?.resultState
+        else {
+            return XCTFail("Expected successful results for both tabs")
+        }
+
+        XCTAssertEqual(firstResultID, firstRequest)
+        XCTAssertEqual(secondResultID, secondRequest)
+        XCTAssertNotEqual(firstResultID, secondResultID)
+    }
+
+    func testAcceptedIdenticalPreviewResultsKeepDistinctSuccessIdentity() {
+        let store = ConnectionWorkspaceStore()
+        let users = SchemaTableSummary(schema: nil, name: "users", kind: "table", columnCount: 2)
+        let firstRequest = UUID()
+        let secondRequest = UUID()
+        let result = QueryResultEnvelope.success(
+            columns: [QueryResultColumn(name: "name", typeName: "TEXT", nullable: nil)],
+            rows: [["Ada"]],
+            rowsAffected: 0,
+            elapsedMs: 4,
+            truncated: false
+        )
+
+        XCTAssertTrue(store.selectTable(users, connectionID: "scratch"))
+
+        store.markPreviewRunning(
+            tableID: users.id,
+            connectionID: "scratch",
+            requestID: firstRequest
+        )
+        store.applyPreviewResult(
+            result,
+            tableID: users.id,
+            connectionID: "scratch",
+            requestID: firstRequest
+        )
+
+        guard case let .success(firstResultID, _, _, _, _, _) = store.tableExplorer(for: "scratch")
+            .previewState else {
+            return XCTFail("Expected first preview result to succeed")
+        }
+
+        store.markPreviewRunning(
+            tableID: users.id,
+            connectionID: "scratch",
+            requestID: secondRequest
+        )
+        store.applyPreviewResult(
+            result,
+            tableID: users.id,
+            connectionID: "scratch",
+            requestID: secondRequest
+        )
+
+        guard case let .success(secondResultID, _, _, _, _, _) = store.tableExplorer(for: "scratch")
+            .previewState else {
+            return XCTFail("Expected second preview result to succeed")
+        }
+
+        XCTAssertEqual(firstResultID, firstRequest)
+        XCTAssertEqual(secondResultID, secondRequest)
+        XCTAssertNotEqual(firstResultID, secondResultID)
+    }
+
     func testClosingSelectedSQLTabFallsBackToTableExplorer() {
         let store = ConnectionWorkspaceStore()
         let sqlTab = store.addSQLTab(for: "scratch")

@@ -104,6 +104,7 @@ public final class ConnectionWorkspaceStore: ObservableObject {
             switch result {
             case let .success(columns, rows, rowsAffected, elapsedMs, truncated):
                 tab.resultState = .success(
+                    resultID: requestID,
                     columns: columns,
                     rows: rows,
                     rowsAffected: rowsAffected,
@@ -202,6 +203,7 @@ public final class ConnectionWorkspaceStore: ObservableObject {
             switch result {
             case let .success(columns, rows, rowsAffected, elapsedMs, truncated):
                 workspace.tableExplorer.previewState = .success(
+                    resultID: requestID,
                     columns: columns,
                     rows: rows,
                     rowsAffected: rowsAffected,

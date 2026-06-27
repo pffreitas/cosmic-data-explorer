@@ -5,6 +5,8 @@ public struct ContentView: View {
     @StateObject private var workspaceStore = ConnectionWorkspaceStore()
     @State private var showingSettings = false
     @State private var showingNewConnection = false
+    @State private var rowDetailSelection: RowDetailSelection?
+    @State private var rowDetailClearID = UUID()
     @State private var openConnectionTasks: [ActiveConnection.ID: Task<ConnectionOpenEnvelope, Error>] = [:]
     private let bridge = NativeBridge()
 
@@ -90,15 +92,26 @@ public struct ContentView: View {
         let workspace = workspaceStore.workspace(for: connection.id)
         let selectedTab = workspace.tabs.first { $0.id == workspace.selectedTabID } ?? workspace.tabs[0]
 
-        return VStack(spacing: 0) {
-            workspaceHeader(connection)
-            Divider()
-            tabStrip(workspace: workspace, connectionID: connection.id)
-            Divider()
-            if selectedTab.kind == .tableExplorer {
-                tableExplorerView(connection)
-            } else {
-                sqlTabView(selectedTab, connection: connection)
+        return ZStack(alignment: .trailing) {
+            VStack(spacing: 0) {
+                workspaceHeader(connection)
+                Divider()
+                tabStrip(workspace: workspace, connectionID: connection.id)
+                Divider()
+                if selectedTab.kind == .tableExplorer {
+                    tableExplorerView(connection)
+                } else {
+                    sqlTabView(selectedTab, connection: connection)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .overlay(alignment: .trailing) {
+            if let selection = visibleRowDetailSelection(
+                for: selectedTab,
+                connectionID: connection.id
+            ) {
+                workspaceRowDetailPanel(selection)
             }
         }
     }
@@ -326,15 +339,79 @@ public struct ContentView: View {
                 .foregroundStyle(.red)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
-        case let .success(columns, rows, rowsAffected, elapsedMs, truncated):
+        case let .success(resultID, columns, rows, rowsAffected, elapsedMs, truncated):
             QueryResultGrid(
+                resultID: resultID,
                 columns: columns,
                 rows: rows,
                 rowsAffected: rowsAffected,
                 elapsedMs: elapsedMs,
-                truncated: truncated
+                truncated: truncated,
+                clearSelectionID: rowDetailClearID,
+                onInspectRow: { selection in
+                    rowDetailSelection = selection
+                },
+                onCloseInspector: clearRowDetailSelection
             )
+            .id(resultID)
         }
+    }
+
+    private func visibleRowDetailSelection(
+        for selectedTab: WorkspaceTab,
+        connectionID: ActiveConnection.ID
+    ) -> RowDetailSelection? {
+        guard let rowDetailSelection,
+            rowDetailSelection.resultID == visibleResultID(
+                for: selectedTab,
+                connectionID: connectionID
+            )
+        else {
+            return nil
+        }
+        return rowDetailSelection
+    }
+
+    private func visibleResultID(
+        for selectedTab: WorkspaceTab,
+        connectionID: ActiveConnection.ID
+    ) -> UUID? {
+        if selectedTab.kind == .tableExplorer {
+            guard case let .success(resultID, _, _, _, _, _) = workspaceStore
+                .tableExplorer(for: connectionID)
+                .previewState
+            else {
+                return nil
+            }
+            return resultID
+        }
+
+        guard case let .success(resultID, _, _, _, _, _) = selectedTab.resultState else {
+            return nil
+        }
+        return resultID
+    }
+
+    @ViewBuilder
+    private func workspaceRowDetailPanel(_ selection: RowDetailSelection) -> some View {
+        RowDetailInspector(
+            columns: selection.columns,
+            row: selection.row,
+            onClose: clearRowDetailSelection
+        )
+        .frame(width: 340)
+        .frame(maxHeight: .infinity)
+        .background(.regularMaterial)
+        .overlay(alignment: .leading) {
+            Divider()
+        }
+        .shadow(color: Color.black.opacity(0.18), radius: 14, x: -4, y: 0)
+        .zIndex(1)
+    }
+
+    private func clearRowDetailSelection() {
+        rowDetailSelection = nil
+        rowDetailClearID = UUID()
     }
 
     private func runQuery(tabID: WorkspaceTab.ID, connectionID: ActiveConnection.ID) {
@@ -593,11 +670,17 @@ private struct ConnectionSidebarRow: View {
 }
 
 private struct QueryResultGrid: View {
+    let resultID: UUID
     let columns: [QueryResultColumn]
     let rows: [[String]]
     let rowsAffected: UInt64
     let elapsedMs: UInt64
     let truncated: Bool
+    let clearSelectionID: UUID
+    let onInspectRow: (RowDetailSelection) -> Void
+    let onCloseInspector: () -> Void
+
+    @State private var selectedRowID: QueryResultTableRow.ID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -615,6 +698,9 @@ private struct QueryResultGrid: View {
             }
         }
         .padding()
+        .onChange(of: clearSelectionID) { _, _ in
+            selectedRowID = nil
+        }
     }
 
     @ViewBuilder
@@ -628,11 +714,16 @@ private struct QueryResultGrid: View {
 
     @available(macOS 14.4, *)
     private var dynamicResultTable: some View {
-        Table(resultRows) {
+        Table(resultRows, selection: $selectedRowID) {
             TableColumnForEach(Array(columns.enumerated()), id: \.offset) { index, column in
                 TableColumn(column.name) { row in
                     Text(row.value(at: index))
                 }
+            }
+        }
+        .onChange(of: selectedRowID) { _, newValue in
+            if let newValue {
+                showInspector(for: newValue)
             }
         }
     }
@@ -641,37 +732,62 @@ private struct QueryResultGrid: View {
     private var fallbackResultTable: some View {
         switch columns.count {
         case 1:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 2:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 3:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 4:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
                 resultColumn(3)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 5:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
                 resultColumn(3)
                 resultColumn(4)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 6:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
@@ -679,8 +795,13 @@ private struct QueryResultGrid: View {
                 resultColumn(4)
                 resultColumn(5)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 7:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
@@ -689,8 +810,13 @@ private struct QueryResultGrid: View {
                 resultColumn(5)
                 resultColumn(6)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 8:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
@@ -700,8 +826,13 @@ private struct QueryResultGrid: View {
                 resultColumn(6)
                 resultColumn(7)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 9:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
@@ -712,8 +843,13 @@ private struct QueryResultGrid: View {
                 resultColumn(7)
                 resultColumn(8)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         case 10:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
@@ -725,8 +861,13 @@ private struct QueryResultGrid: View {
                 resultColumn(8)
                 resultColumn(9)
             }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
+            }
         default:
-            Table(resultRows) {
+            Table(resultRows, selection: $selectedRowID) {
                 resultColumn(0)
                 resultColumn(1)
                 resultColumn(2)
@@ -737,6 +878,11 @@ private struct QueryResultGrid: View {
                 resultColumn(7)
                 resultColumn(8)
                 overflowColumn(from: 9)
+            }
+            .onChange(of: selectedRowID) { _, newValue in
+                if let newValue {
+                    showInspector(for: newValue)
+                }
             }
         }
     }
@@ -761,6 +907,103 @@ private struct QueryResultGrid: View {
 
     private var statusText: String {
         "\(rows.count) rows, \(rowsAffected) affected, \(elapsedMs) ms\(truncated ? ", truncated" : "")"
+    }
+
+    private func showInspector(for selectedRowID: QueryResultTableRow.ID) {
+        guard let selectedRow = resultRows.first(where: { $0.id == selectedRowID }) else {
+            clearSelection()
+            return
+        }
+        onInspectRow(RowDetailSelection(resultID: resultID, columns: columns, row: selectedRow))
+    }
+
+    private func clearSelection() {
+        selectedRowID = nil
+        onCloseInspector()
+    }
+}
+
+private struct RowDetailSelection {
+    let resultID: UUID
+    let columns: [QueryResultColumn]
+    let row: QueryResultTableRow
+}
+
+private struct RowDetailInspector: View {
+    let columns: [QueryResultColumn]
+    let row: QueryResultTableRow
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Details")
+                    .font(.headline)
+
+                Spacer()
+
+                Button {
+                    onClose()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("Close Details")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(columns.enumerated()), id: \.offset) { index, column in
+                        RowDetailField(
+                            column: column,
+                            value: row.value(at: index)
+                        )
+                    }
+                }
+                .padding(12)
+            }
+        }
+    }
+}
+
+private struct RowDetailField: View {
+    let column: QueryResultColumn
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(column.name)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+
+                if !metadataText.isEmpty {
+                    Text(metadataText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(value)
+                .font(.system(.body, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(Color.secondary.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .textSelection(.enabled)
+        }
+    }
+
+    private var metadataText: String {
+        let nullableText = column.nullable.map { $0 ? "nullable" : "not null" }
+        return [column.typeName, nullableText]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " / ")
     }
 }
 
