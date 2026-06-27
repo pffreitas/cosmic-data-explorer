@@ -26,6 +26,14 @@ async fn sqlite_connector_executes_queries_and_previews_tables() {
         ))
         .await
         .unwrap();
+    session
+        .execute_query(QueryRequest::new(
+            profile.id.clone(),
+            "create table empty_users (id integer primary key, name text)",
+            100,
+        ))
+        .await
+        .unwrap();
 
     let result = session
         .execute_query(QueryRequest::new(
@@ -49,4 +57,27 @@ async fn sqlite_connector_executes_queries_and_previews_tables() {
 
     let preview = session.preview_table(None, "users", 50).await.unwrap();
     assert_eq!(preview.rows.len(), 1);
+
+    let empty_preview = session
+        .preview_table(None, "empty_users", 50)
+        .await
+        .unwrap();
+    assert_eq!(
+        empty_preview
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["id", "name"]
+    );
+    assert_eq!(empty_preview.rows.len(), 0);
+
+    let schema = session.load_schema().await.unwrap();
+    let users = schema
+        .tables
+        .iter()
+        .find(|table| table.name == "users")
+        .expect("users table should be listed");
+    assert_eq!(users.kind, "table");
+    assert_eq!(users.columns.len(), 2);
 }

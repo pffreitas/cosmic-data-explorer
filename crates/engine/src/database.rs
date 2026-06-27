@@ -6,7 +6,8 @@ use sqlx::{
     mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlRow, MySqlSslMode},
     postgres::{PgConnectOptions, PgPoolOptions, PgRow, PgSslMode},
     sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow},
-    AssertSqlSafe, Column as SqlxColumn, MySqlPool, PgPool, Row, SqlitePool, TypeInfo,
+    AssertSqlSafe, Column as SqlxColumn, Executor, MySqlPool, PgPool, Row, SqlSafeStr, SqlitePool,
+    Statement, TypeInfo,
 };
 
 use crate::{
@@ -244,6 +245,7 @@ pub struct DatabaseSchema {
 pub struct SchemaTable {
     pub schema: Option<String>,
     pub name: String,
+    pub kind: String,
     pub columns: Vec<ColumnInfo>,
 }
 
@@ -296,15 +298,13 @@ async fn execute_mysql(pool: &MySqlPool, sql: &str, max_rows: usize) -> Result<Q
 
 async fn collect_sqlite_rows(pool: &SqlitePool, sql: &str, max_rows: usize) -> Result<QueryResult> {
     let start = Instant::now();
-    let mut stream = sqlx::query(AssertSqlSafe(sql)).fetch(pool);
-    let mut columns = Vec::new();
+    let statement = pool.prepare(AssertSqlSafe(sql).into_sql_str()).await?;
+    let columns = columns_from_sqlx(statement.columns());
+    let mut stream = statement.query().fetch(pool);
     let mut rows = Vec::new();
     let mut truncated = false;
 
     while let Some(row) = stream.try_next().await? {
-        if columns.is_empty() {
-            columns = columns_from_sqlx(row.columns());
-        }
         if rows.len() >= max_rows {
             truncated = true;
             break;
@@ -325,15 +325,13 @@ async fn collect_sqlite_rows(pool: &SqlitePool, sql: &str, max_rows: usize) -> R
 
 async fn collect_postgres_rows(pool: &PgPool, sql: &str, max_rows: usize) -> Result<QueryResult> {
     let start = Instant::now();
-    let mut stream = sqlx::query(AssertSqlSafe(sql)).fetch(pool);
-    let mut columns = Vec::new();
+    let statement = pool.prepare(AssertSqlSafe(sql).into_sql_str()).await?;
+    let columns = columns_from_sqlx(statement.columns());
+    let mut stream = statement.query().fetch(pool);
     let mut rows = Vec::new();
     let mut truncated = false;
 
     while let Some(row) = stream.try_next().await? {
-        if columns.is_empty() {
-            columns = columns_from_sqlx(row.columns());
-        }
         if rows.len() >= max_rows {
             truncated = true;
             break;
@@ -354,15 +352,13 @@ async fn collect_postgres_rows(pool: &PgPool, sql: &str, max_rows: usize) -> Res
 
 async fn collect_mysql_rows(pool: &MySqlPool, sql: &str, max_rows: usize) -> Result<QueryResult> {
     let start = Instant::now();
-    let mut stream = sqlx::query(AssertSqlSafe(sql)).fetch(pool);
-    let mut columns = Vec::new();
+    let statement = pool.prepare(AssertSqlSafe(sql).into_sql_str()).await?;
+    let columns = columns_from_sqlx(statement.columns());
+    let mut stream = statement.query().fetch(pool);
     let mut rows = Vec::new();
     let mut truncated = false;
 
     while let Some(row) = stream.try_next().await? {
-        if columns.is_empty() {
-            columns = columns_from_sqlx(row.columns());
-        }
         if rows.len() >= max_rows {
             truncated = true;
             break;
@@ -384,7 +380,7 @@ async fn collect_mysql_rows(pool: &MySqlPool, sql: &str, max_rows: usize) -> Res
 async fn load_sqlite_schema(pool: &SqlitePool) -> Result<DatabaseSchema> {
     let table_rows = sqlx::query(
         r#"
-        select name
+        select name, type
         from sqlite_master
         where type in ('table', 'view')
           and name not like 'sqlite_%'
@@ -397,6 +393,7 @@ async fn load_sqlite_schema(pool: &SqlitePool) -> Result<DatabaseSchema> {
     let mut tables = Vec::new();
     for table_row in table_rows {
         let table_name = table_row.try_get::<String, _>("name")?;
+        let table_kind = table_row.try_get::<String, _>("type")?;
         let pragma = format!(
             "pragma table_info({})",
             quote_identifier_double(&table_name)?
@@ -418,6 +415,7 @@ async fn load_sqlite_schema(pool: &SqlitePool) -> Result<DatabaseSchema> {
         tables.push(SchemaTable {
             schema: None,
             name: table_name,
+            kind: normalize_table_kind(&table_kind),
             columns,
         });
     }
@@ -428,10 +426,20 @@ async fn load_sqlite_schema(pool: &SqlitePool) -> Result<DatabaseSchema> {
 async fn load_postgres_schema(pool: &PgPool) -> Result<DatabaseSchema> {
     let rows = sqlx::query(
         r#"
-        select table_schema, table_name, column_name, data_type, is_nullable, ordinal_position
-        from information_schema.columns
-        where table_schema not in ('pg_catalog', 'information_schema')
-        order by table_schema, table_name, ordinal_position
+        select
+            c.table_schema,
+            c.table_name,
+            t.table_type,
+            c.column_name,
+            c.data_type,
+            c.is_nullable,
+            c.ordinal_position
+        from information_schema.columns c
+        join information_schema.tables t
+          on t.table_schema = c.table_schema
+         and t.table_name = c.table_name
+        where c.table_schema not in ('pg_catalog', 'information_schema')
+        order by c.table_schema, c.table_name, c.ordinal_position
         "#,
     )
     .fetch_all(pool)
@@ -442,6 +450,7 @@ async fn load_postgres_schema(pool: &PgPool) -> Result<DatabaseSchema> {
             Ok((
                 Some(row.try_get::<String, _>("table_schema")?),
                 row.try_get::<String, _>("table_name")?,
+                normalize_table_kind(&row.try_get::<String, _>("table_type")?),
                 ColumnInfo {
                     name: row.try_get("column_name")?,
                     type_name: row.try_get("data_type")?,
@@ -456,10 +465,20 @@ async fn load_postgres_schema(pool: &PgPool) -> Result<DatabaseSchema> {
 async fn load_mysql_schema(pool: &MySqlPool) -> Result<DatabaseSchema> {
     let rows = sqlx::query(
         r#"
-        select table_schema, table_name, column_name, data_type, is_nullable, ordinal_position
-        from information_schema.columns
-        where table_schema = database()
-        order by table_schema, table_name, ordinal_position
+        select
+            c.table_schema,
+            c.table_name,
+            t.table_type,
+            c.column_name,
+            c.data_type,
+            c.is_nullable,
+            c.ordinal_position
+        from information_schema.columns c
+        join information_schema.tables t
+          on t.table_schema = c.table_schema
+         and t.table_name = c.table_name
+        where c.table_schema = database()
+        order by c.table_schema, c.table_name, c.ordinal_position
         "#,
     )
     .fetch_all(pool)
@@ -470,6 +489,7 @@ async fn load_mysql_schema(pool: &MySqlPool) -> Result<DatabaseSchema> {
             Ok((
                 Some(row.try_get::<String, _>("table_schema")?),
                 row.try_get::<String, _>("table_name")?,
+                normalize_table_kind(&row.try_get::<String, _>("table_type")?),
                 ColumnInfo {
                     name: row.try_get("column_name")?,
                     type_name: row.try_get("data_type")?,
@@ -482,23 +502,35 @@ async fn load_mysql_schema(pool: &MySqlPool) -> Result<DatabaseSchema> {
 }
 
 fn grouped_schema_rows(
-    rows: impl Iterator<Item = Result<(Option<String>, String, ColumnInfo)>>,
+    rows: impl Iterator<Item = Result<(Option<String>, String, String, ColumnInfo)>>,
 ) -> Result<Vec<SchemaTable>> {
-    let mut grouped: BTreeMap<(Option<String>, String), Vec<ColumnInfo>> = BTreeMap::new();
+    let mut grouped: BTreeMap<(Option<String>, String, String), Vec<ColumnInfo>> = BTreeMap::new();
 
     for row in rows {
-        let (schema, table, column) = row?;
-        grouped.entry((schema, table)).or_default().push(column);
+        let (schema, table, kind, column) = row?;
+        grouped
+            .entry((schema, table, kind))
+            .or_default()
+            .push(column);
     }
 
     Ok(grouped
         .into_iter()
-        .map(|((schema, name), columns)| SchemaTable {
+        .map(|((schema, name, kind), columns)| SchemaTable {
             schema,
             name,
+            kind,
             columns,
         })
         .collect())
+}
+
+fn normalize_table_kind(kind: &str) -> String {
+    match kind.to_ascii_lowercase().as_str() {
+        "base table" | "table" => "table".to_string(),
+        "view" => "view".to_string(),
+        other => other.replace(' ', "_"),
+    }
 }
 
 fn columns_from_sqlx<C>(columns: &[C]) -> Vec<Column>
