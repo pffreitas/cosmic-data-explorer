@@ -69,6 +69,10 @@ cp "$SWIFT_EXECUTABLE" "$BUNDLED_EXECUTABLE"
 cp "$BRIDGE_LIBRARY" "$BUNDLED_BRIDGE"
 chmod +x "$BUNDLED_EXECUTABLE"
 
+install_name_tool \
+    -id "@executable_path/../Frameworks/libcosmic_native_bridge.dylib" \
+    "$BUNDLED_BRIDGE"
+
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

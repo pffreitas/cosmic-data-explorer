@@ -42,6 +42,8 @@ assert_contains "14.0"
 assert_contains "LSApplicationCategoryType"
 assert_contains "public.app-category.developer-tools"
 assert_contains "install_name_tool"
+assert_contains "-id \"@executable_path/../Frameworks/libcosmic_native_bridge.dylib\""
+assert_contains "\"\$BUNDLED_BRIDGE\""
 assert_contains "@executable_path/../Frameworks/libcosmic_native_bridge.dylib"
 
 printf 'Release app script contract passed.\n'
