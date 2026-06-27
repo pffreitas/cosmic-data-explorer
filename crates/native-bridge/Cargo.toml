@@ -1,0 +1,17 @@
+[package]
+name = "cosmic-native-bridge"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "cosmic_native_bridge"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+cosmic-data-engine = { path = "../engine" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
