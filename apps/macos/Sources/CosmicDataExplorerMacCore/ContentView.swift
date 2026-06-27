@@ -16,6 +16,7 @@ public struct ContentView: View {
         NavigationSplitView {
             sidebar
                 .navigationTitle("Connections")
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button {

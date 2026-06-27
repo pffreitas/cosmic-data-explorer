@@ -14,6 +14,7 @@ final class ContentViewContractTests: XCTestCase {
         XCTAssertTrue(source.contains("NewConnectionView"))
         XCTAssertTrue(source.contains("Image(systemName: \"plus\")"))
         XCTAssertTrue(source.contains("createConnection"))
+        XCTAssertTrue(source.contains(".navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)"))
         XCTAssertTrue(source.contains("Table(tables, selection:"))
         XCTAssertTrue(source.contains("loadTableSchema"))
         XCTAssertTrue(source.contains("previewSelectedTable"))
