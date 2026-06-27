@@ -164,7 +164,10 @@ async fn execute_query_async(input: ExecuteQueryInput) -> cosmic_data_engine::Re
 
 fn executable_profile(connection_id: &str) -> cosmic_data_engine::Result<ConnectionProfile> {
     match connection_id {
-        "scratch" => Ok(ConnectionProfile::new_sqlite("Scratch", scratch_database_path())),
+        "scratch" => Ok(ConnectionProfile::new_sqlite(
+            "Scratch",
+            scratch_database_path(),
+        )),
         other => Err(EngineError::Validation(format!(
             "Connection '{other}' is not available for query execution yet."
         ))),

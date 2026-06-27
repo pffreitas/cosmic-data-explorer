@@ -42,6 +42,7 @@ final class ConnectionWorkspaceStoreTests: XCTestCase {
         let staleRequest = UUID()
 
         store.markRunning(tabID: firstTab, connectionID: "scratch", requestID: firstRequest)
+        XCTAssertTrue(store.tab(id: firstTab, connectionID: "scratch")?.resultState.isRunning == true)
         store.markRunning(tabID: secondTab, connectionID: "scratch", requestID: staleRequest)
         store.markRunning(tabID: secondTab, connectionID: "scratch", requestID: UUID())
 

@@ -41,8 +41,7 @@ fn execute_query_json_returns_sqlite_rows() {
 #[test]
 fn execute_query_json_returns_failure_for_empty_sql() {
     let request =
-        std::ffi::CString::new(r#"{"connectionId":"scratch","sql":"   ","maxRows":100}"#)
-            .unwrap();
+        std::ffi::CString::new(r#"{"connectionId":"scratch","sql":"   ","maxRows":100}"#).unwrap();
 
     let ptr = cosmic_native_bridge::cosmic_execute_query_json(request.as_ptr());
     assert!(!ptr.is_null());
@@ -77,5 +76,8 @@ fn execute_query_json_returns_failure_for_unresolved_connections() {
     }
 
     assert!(json.contains(r#""ok":false"#), "{json}");
-    assert!(json.contains("not available for query execution yet"), "{json}");
+    assert!(
+        json.contains("not available for query execution yet"),
+        "{json}"
+    );
 }

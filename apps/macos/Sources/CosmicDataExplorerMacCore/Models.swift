@@ -51,6 +51,13 @@ public enum QueryExecutionState: Equatable, Sendable {
         }
         return rows.count
     }
+
+    public var isRunning: Bool {
+        if case .running = self {
+            return true
+        }
+        return false
+    }
 }
 
 public enum WorkspaceTabKind: String, Equatable, Sendable {
