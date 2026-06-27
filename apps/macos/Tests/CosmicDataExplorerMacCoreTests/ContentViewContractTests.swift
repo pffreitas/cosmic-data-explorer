@@ -14,6 +14,17 @@ final class ContentViewContractTests: XCTestCase {
         XCTAssertTrue(source.contains("NewConnectionView"))
         XCTAssertTrue(source.contains("Image(systemName: \"plus\")"))
         XCTAssertTrue(source.contains("createConnection"))
+        XCTAssertTrue(source.contains("Table(tables, selection:"))
+        XCTAssertTrue(source.contains("loadTableSchema"))
+        XCTAssertTrue(source.contains("previewSelectedTable"))
+        XCTAssertTrue(source.contains("loadSchema(connectionID:"))
+        XCTAssertTrue(source.contains("previewTable("))
+        XCTAssertTrue(source.contains("maxRows: 50"))
+        XCTAssertTrue(source.contains(".task(id: store.selectedConnectionID)"))
+        XCTAssertTrue(source.contains("openSelectedConnection"))
+        XCTAssertTrue(source.contains("openConnection(connectionID:"))
+        XCTAssertTrue(source.contains("Table(resultRows)"))
+        XCTAssertFalse(source.contains("Grid(alignment: .leading"))
     }
 
     private var contentViewURL: URL {

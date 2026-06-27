@@ -5,6 +5,7 @@ public struct ContentView: View {
     @StateObject private var workspaceStore = ConnectionWorkspaceStore()
     @State private var showingSettings = false
     @State private var showingNewConnection = false
+    @State private var openConnectionTasks: [ActiveConnection.ID: Task<ConnectionOpenEnvelope, Error>] = [:]
     private let bridge = NativeBridge()
 
     public init(store: ConnectionStore = ConnectionStore()) {
@@ -36,6 +37,12 @@ public struct ContentView: View {
             NewConnectionView { name, connectionString in
                 try await store.createConnection(name: name, connectionString: connectionString)
             }
+        }
+        .task {
+            store.load()
+        }
+        .task(id: store.selectedConnectionID) {
+            await openSelectedConnection()
         }
     }
 
@@ -165,15 +172,106 @@ public struct ContentView: View {
     }
 
     private func tableExplorerView(_ connection: ActiveConnection) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Table Explorer")
-                .font(.headline)
-            Text("\(connection.name) schema browsing is outside this slice.")
-                .foregroundStyle(.secondary)
-            Spacer()
+        let explorer = workspaceStore.tableExplorer(for: connection.id)
+
+        return VStack(spacing: 0) {
+            HStack {
+                Text("Table Explorer")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    loadTableSchema(connectionID: connection.id)
+                } label: {
+                    Label("Reload", systemImage: "arrow.clockwise")
+                }
+                .disabled(explorer.schemaState.isRunning)
+            }
+            .padding()
+
+            Divider()
+
+            VSplitView {
+                tableListView(explorer: explorer, connectionID: connection.id)
+                    .frame(minHeight: 180)
+
+                tablePreviewView(explorer.previewState)
+                    .frame(minHeight: 220)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding()
+        .task(id: connection.id) {
+            _ = await openConnectionIfNeeded(connectionID: connection.id)
+            if case .empty = workspaceStore.tableExplorer(for: connection.id).schemaState {
+                loadTableSchema(connectionID: connection.id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tableListView(
+        explorer: TableExplorerState,
+        connectionID: ActiveConnection.ID
+    ) -> some View {
+        switch explorer.schemaState {
+        case .empty:
+            Text("Load schema to browse tables.")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .running:
+            ProgressView("Loading tables...")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case let .failure(message):
+            Text(message)
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+        case let .success(tables):
+            if tables.isEmpty {
+                Text("No tables found.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Table(tables, selection: Binding<SchemaTableSummary.ID?>(
+                        get: {
+                            workspaceStore.tableExplorer(for: connectionID).selectedTableID
+                        },
+                        set: { selectedTableID in
+                            guard let selectedTableID,
+                                let table = workspaceStore
+                                    .tableExplorer(for: connectionID)
+                                    .tables
+                                    .first(where: { $0.id == selectedTableID })
+                            else {
+                                return
+                            }
+                            previewSelectedTable(table, connectionID: connectionID)
+                        }
+                    )
+                ) {
+                    TableColumn("name", value: \.name)
+                    TableColumn("schema") { table in
+                        Text(table.schema ?? "--")
+                    }
+                    TableColumn("kind", value: \.kind)
+                    TableColumn("columns") { table in
+                        Text("\(table.columnCount)")
+                            .monospacedDigit()
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tablePreviewView(_ state: QueryExecutionState) -> some View {
+        switch state {
+        case .empty:
+            Text("Select a table to preview the first 50 rows.")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        default:
+            resultView(state)
+        }
     }
 
     private func sqlTabView(_ tab: WorkspaceTab, connection: ActiveConnection) -> some View {
@@ -263,6 +361,124 @@ public struct ContentView: View {
                 workspaceStore.applyResult(
                     result,
                     tabID: tabID,
+                    connectionID: connectionID,
+                    requestID: requestID
+                )
+            }
+        }
+    }
+
+    @MainActor
+    private func openSelectedConnection() async {
+        guard let connectionID = store.selectedConnectionID else {
+            return
+        }
+
+        _ = await openConnectionIfNeeded(connectionID: connectionID)
+    }
+
+    @MainActor
+    @discardableResult
+    private func openConnectionIfNeeded(
+        connectionID: ActiveConnection.ID
+    ) async -> ConnectionOpenEnvelope? {
+        if let task = openConnectionTasks[connectionID] {
+            return await applyOpenConnectionResult(task)
+        }
+
+        let bridge = bridge
+        let task = Task.detached {
+            try bridge.openConnection(connectionID: connectionID)
+        }
+        openConnectionTasks[connectionID] = task
+        defer {
+            openConnectionTasks[connectionID] = nil
+        }
+
+        return await applyOpenConnectionResult(task)
+    }
+
+    @MainActor
+    private func applyOpenConnectionResult(
+        _ task: Task<ConnectionOpenEnvelope, Error>
+    ) async -> ConnectionOpenEnvelope? {
+        do {
+            let result = try await task.value
+            switch result {
+            case .success:
+                store.recordError(nil)
+            case let .failure(message):
+                store.recordError(message)
+            }
+            return result
+        } catch {
+            store.recordError(error.localizedDescription)
+            return nil
+        }
+    }
+
+    private func loadTableSchema(connectionID: ActiveConnection.ID) {
+        let requestID = UUID()
+        let hadSelection = workspaceStore.tableExplorer(for: connectionID).selectedTableID != nil
+        workspaceStore.markSchemaLoading(connectionID: connectionID, requestID: requestID)
+
+        Task {
+            let result: SchemaLoadEnvelope
+            do {
+                result = try await Task.detached {
+                    try bridge.loadSchema(connectionID: connectionID)
+                }.value
+            } catch {
+                result = .failure(message: error.localizedDescription)
+            }
+
+            await MainActor.run {
+                workspaceStore.applySchemaResult(
+                    result,
+                    connectionID: connectionID,
+                    requestID: requestID
+                )
+
+                if case let .success(tables) = result, !hadSelection, let firstTable = tables.first {
+                    previewSelectedTable(firstTable, connectionID: connectionID)
+                }
+            }
+        }
+    }
+
+    private func previewSelectedTable(
+        _ table: SchemaTableSummary,
+        connectionID: ActiveConnection.ID
+    ) {
+        let requestID = UUID()
+        guard workspaceStore.selectTable(table, connectionID: connectionID) else {
+            return
+        }
+        workspaceStore.markPreviewRunning(
+            tableID: table.id,
+            connectionID: connectionID,
+            requestID: requestID
+        )
+
+        Task {
+            let result: QueryResultEnvelope
+            do {
+                result = try await Task.detached {
+                    try bridge.previewTable(
+                        connectionID: connectionID,
+                        schema: table.schema,
+                        table: table.name,
+                        maxRows: 50
+                    )
+                }.value
+            } catch {
+                result = .failure(message: error.localizedDescription)
+            }
+
+            await MainActor.run {
+                workspaceStore.applyPreviewResult(
+                    result,
+                    tableID: table.id,
                     connectionID: connectionID,
                     requestID: requestID
                 )
@@ -388,37 +604,177 @@ private struct QueryResultGrid: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            ScrollView([.horizontal, .vertical]) {
-                if columns.isEmpty {
-                    Text("Statement completed.")
-                        .foregroundStyle(.secondary)
-                        .padding()
-                } else {
-                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                        GridRow {
-                            ForEach(columns) { column in
-                                Text(column.name)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-
-                        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                            GridRow {
-                                ForEach(Array(columns.enumerated()), id: \.offset) { index, _ in
-                                    Text(index < row.count ? row[index] : "")
-                                        .textSelection(.enabled)
-                                }
-                            }
-                        }
-                    }
+            if columns.isEmpty {
+                Text("Statement completed.")
+                    .foregroundStyle(.secondary)
                     .padding()
-                }
+            } else {
+                resultTable
+                    .textSelection(.enabled)
             }
         }
         .padding()
     }
 
+    @ViewBuilder
+    private var resultTable: some View {
+        if #available(macOS 14.4, *) {
+            dynamicResultTable
+        } else {
+            fallbackResultTable
+        }
+    }
+
+    @available(macOS 14.4, *)
+    private var dynamicResultTable: some View {
+        Table(resultRows) {
+            TableColumnForEach(Array(columns.enumerated()), id: \.offset) { index, column in
+                TableColumn(column.name) { row in
+                    Text(row.value(at: index))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var fallbackResultTable: some View {
+        switch columns.count {
+        case 1:
+            Table(resultRows) {
+                resultColumn(0)
+            }
+        case 2:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+            }
+        case 3:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+            }
+        case 4:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+                resultColumn(3)
+            }
+        case 5:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+                resultColumn(3)
+                resultColumn(4)
+            }
+        case 6:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+                resultColumn(3)
+                resultColumn(4)
+                resultColumn(5)
+            }
+        case 7:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+                resultColumn(3)
+                resultColumn(4)
+                resultColumn(5)
+                resultColumn(6)
+            }
+        case 8:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+                resultColumn(3)
+                resultColumn(4)
+                resultColumn(5)
+                resultColumn(6)
+                resultColumn(7)
+            }
+        case 9:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+                resultColumn(3)
+                resultColumn(4)
+                resultColumn(5)
+                resultColumn(6)
+                resultColumn(7)
+                resultColumn(8)
+            }
+        case 10:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+                resultColumn(3)
+                resultColumn(4)
+                resultColumn(5)
+                resultColumn(6)
+                resultColumn(7)
+                resultColumn(8)
+                resultColumn(9)
+            }
+        default:
+            Table(resultRows) {
+                resultColumn(0)
+                resultColumn(1)
+                resultColumn(2)
+                resultColumn(3)
+                resultColumn(4)
+                resultColumn(5)
+                resultColumn(6)
+                resultColumn(7)
+                resultColumn(8)
+                overflowColumn(from: 9)
+            }
+        }
+    }
+
+    private func resultColumn(_ index: Int) -> TableColumn<QueryResultTableRow, Never, Text, Text> {
+        TableColumn(columns[index].name) { row in
+            Text(row.value(at: index))
+        }
+    }
+
+    private func overflowColumn(from index: Int) -> TableColumn<QueryResultTableRow, Never, Text, Text> {
+        TableColumn("more") { row in
+            Text(row.values(from: index).joined(separator: " | "))
+        }
+    }
+
+    private var resultRows: [QueryResultTableRow] {
+        rows.enumerated().map { offset, cells in
+            QueryResultTableRow(id: offset, cells: cells)
+        }
+    }
+
     private var statusText: String {
         "\(rows.count) rows, \(rowsAffected) affected, \(elapsedMs) ms\(truncated ? ", truncated" : "")"
+    }
+}
+
+private struct QueryResultTableRow: Identifiable {
+    let id: Int
+    let cells: [String]
+
+    func value(at index: Int) -> String {
+        index < cells.count ? cells[index] : ""
+    }
+
+    func values(from index: Int) -> [String] {
+        guard index < cells.count else {
+            return []
+        }
+        return Array(cells[index...])
     }
 }

@@ -10,7 +10,6 @@ public final class ConnectionStore: ObservableObject {
 
     public init(bridge: NativeBridge = NativeBridge()) {
         self.bridge = bridge
-        load()
     }
 
     public var selectedConnection: ActiveConnection? {
@@ -47,5 +46,9 @@ public final class ConnectionStore: ObservableObject {
             lastError = error.localizedDescription
             throw error
         }
+    }
+
+    public func recordError(_ message: String?) {
+        lastError = message
     }
 }

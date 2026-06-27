@@ -79,4 +79,88 @@ final class NativeBridgeTests: XCTestCase {
             )
         }
     }
+
+    func testBridgeOpensConnection() throws {
+        let bridge = NativeBridge(
+            openConnectionJson: { requestJSON in
+                XCTAssertTrue(requestJSON.contains(#""connectionId":"scratch""#))
+                return #"{"ok":true}"#
+            }
+        )
+
+        XCTAssertEqual(try bridge.openConnection(connectionID: "scratch"), .success)
+    }
+
+    func testBridgeDecodesOpenConnectionFailure() throws {
+        let bridge = NativeBridge(
+            openConnectionJson: { _ in
+                #"{"ok":false,"message":"denied"}"#
+            }
+        )
+
+        XCTAssertEqual(
+            try bridge.openConnection(connectionID: "scratch"),
+            .failure(message: "denied")
+        )
+    }
+
+    func testBridgeDecodesSchemaTables() throws {
+        let bridge = NativeBridge(
+            loadSchemaJson: { requestJSON in
+                XCTAssertTrue(requestJSON.contains(#""connectionId":"scratch""#))
+                return """
+                {"ok":true,"tables":[{"schema":null,"name":"users","kind":"table","columnCount":2}]}
+                """
+            }
+        )
+
+        let result = try bridge.loadSchema(connectionID: "scratch")
+
+        guard case let .success(tables) = result else {
+            return XCTFail("Expected successful schema load")
+        }
+        XCTAssertEqual(tables, [
+            SchemaTableSummary(schema: nil, name: "users", kind: "table", columnCount: 2)
+        ])
+    }
+
+    func testBridgeDecodesSchemaFailure() throws {
+        let bridge = NativeBridge(
+            loadSchemaJson: { _ in
+                #"{"ok":false,"message":"schema unavailable"}"#
+            }
+        )
+
+        let result = try bridge.loadSchema(connectionID: "missing")
+
+        XCTAssertEqual(result, .failure(message: "schema unavailable"))
+    }
+
+    func testBridgePreviewsTable() throws {
+        let bridge = NativeBridge(
+            previewTableJson: { requestJSON in
+                XCTAssertTrue(requestJSON.contains(#""connectionId":"scratch""#))
+                XCTAssertTrue(requestJSON.contains(#""table":"users""#))
+                XCTAssertTrue(requestJSON.contains(#""maxRows":50"#))
+                return """
+                {"ok":true,"columns":[{"name":"name","typeName":"TEXT","nullable":null}],"rows":[["Ada"]],"rowsAffected":0,"elapsedMs":2,"truncated":false}
+                """
+            }
+        )
+
+        let result = try bridge.previewTable(
+            connectionID: "scratch",
+            schema: nil,
+            table: "users",
+            maxRows: 50
+        )
+
+        guard case let .success(columns, rows, _, elapsedMs, truncated) = result else {
+            return XCTFail("Expected successful preview")
+        }
+        XCTAssertEqual(columns.map(\.name), ["name"])
+        XCTAssertEqual(rows, [["Ada"]])
+        XCTAssertEqual(elapsedMs, 2)
+        XCTAssertFalse(truncated)
+    }
 }
