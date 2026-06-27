@@ -10,6 +10,10 @@ final class ContentViewContractTests: XCTestCase {
         XCTAssertTrue(source.contains("Table Explorer"))
         XCTAssertTrue(source.contains("QueryResultGrid"))
         XCTAssertTrue(source.contains("executeQuery"))
+        XCTAssertTrue(source.contains("showingNewConnection"))
+        XCTAssertTrue(source.contains("NewConnectionView"))
+        XCTAssertTrue(source.contains("Image(systemName: \"plus\")"))
+        XCTAssertTrue(source.contains("createConnection"))
     }
 
     private var contentViewURL: URL {

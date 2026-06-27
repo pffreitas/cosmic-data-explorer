@@ -4,6 +4,7 @@ public struct ContentView: View {
     @StateObject private var store: ConnectionStore
     @StateObject private var workspaceStore = ConnectionWorkspaceStore()
     @State private var showingSettings = false
+    @State private var showingNewConnection = false
     private let bridge = NativeBridge()
 
     public init(store: ConnectionStore = ConnectionStore()) {
@@ -14,12 +15,27 @@ public struct ContentView: View {
         NavigationSplitView {
             sidebar
                 .navigationTitle("Connections")
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            showingNewConnection = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .help("New Connection")
+                    }
+                }
         } detail: {
             queryWorkspace
         }
         .frame(minWidth: 980, minHeight: 640)
         .sheet(isPresented: $showingSettings) {
             ConnectionSettingsView(connections: store.activeConnections)
+        }
+        .sheet(isPresented: $showingNewConnection) {
+            NewConnectionView { name, connectionString in
+                try await store.createConnection(name: name, connectionString: connectionString)
+            }
         }
     }
 
@@ -250,6 +266,92 @@ public struct ContentView: View {
                     connectionID: connectionID,
                     requestID: requestID
                 )
+            }
+        }
+    }
+}
+
+private struct NewConnectionView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var connectionString = ""
+    @State private var errorMessage: String?
+    @State private var isCreating = false
+
+    let onCreate: @MainActor (String, String) async throws -> ActiveConnection
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("New Connection")
+                    .font(.title2.bold())
+
+                Spacer()
+
+                Button("Cancel") {
+                    dismiss()
+                }
+                .disabled(isCreating)
+
+                Button {
+                    createConnection()
+                } label: {
+                    if isCreating {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Create")
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canCreate)
+            }
+            .padding()
+
+            Divider()
+
+            Form {
+                TextField("Name", text: $name)
+                Section("Connection String") {
+                    TextEditor(text: $connectionString)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 120)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
+            }
+            .formStyle(.grouped)
+            .padding()
+        }
+        .frame(minWidth: 560, minHeight: 360)
+    }
+
+    private var canCreate: Bool {
+        !isCreating
+            && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func createConnection() {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedConnectionString = connectionString.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        Task { @MainActor in
+            isCreating = true
+            errorMessage = nil
+            defer {
+                isCreating = false
+            }
+
+            do {
+                _ = try await onCreate(trimmedName, trimmedConnectionString)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
     }

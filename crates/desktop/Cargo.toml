@@ -1,0 +1,21 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+build = "build.rs"
+
+[dependencies]
+cosmic-data-engine = { path = "../engine" }
+slint.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+
+[package.metadata.packager]
+product-name = "Cosmic Data Explorer"
+identifier = "dev.cosmic-data-explorer.desktop"
+category = "DeveloperTool"
+copyright = "Copyright (c) Cosmic Data Explorer contributors"
+before-packaging-command = "cargo build --release -p desktop"

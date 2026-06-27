@@ -39,4 +39,44 @@ final class NativeBridgeTests: XCTestCase {
 
         XCTAssertTrue(message.contains("not available for query execution yet"))
     }
+
+    func testBridgeDecodesCreateConnectionSuccess() throws {
+        let bridge = NativeBridge(
+            createConnectionJson: { requestJSON in
+                XCTAssertTrue(requestJSON.contains("\"name\":\"Hackathon\""))
+                XCTAssertTrue(requestJSON.contains("postgres"))
+                XCTAssertTrue(requestJSON.contains("localhost"))
+                XCTAssertTrue(requestJSON.contains("hackathon"))
+                return """
+                {"ok":true,"connection":{"id":"profile_123","name":"Hackathon","kind":"PostgreSQL","detail":"hackathon / admin","status":"Saved"}}
+                """
+            }
+        )
+
+        let connection = try bridge.createConnection(
+            name: "Hackathon",
+            connectionString: "postgres://admin:secret@localhost/hackathon"
+        )
+
+        XCTAssertEqual(connection.id, "profile_123")
+        XCTAssertEqual(connection.name, "Hackathon")
+        XCTAssertEqual(connection.status, "Saved")
+    }
+
+    func testBridgeThrowsCreateConnectionFailure() throws {
+        let bridge = NativeBridge(
+            createConnectionJson: { _ in
+                #"{"ok":false,"message":"connection display name is required"}"#
+            }
+        )
+
+        XCTAssertThrowsError(
+            try bridge.createConnection(name: "", connectionString: "not a url")
+        ) { error in
+            XCTAssertEqual(
+                error as? NativeBridgeError,
+                .operationFailed("connection display name is required")
+            )
+        }
+    }
 }

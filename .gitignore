@@ -1,0 +1,9 @@
+/target/
+/apps/macos/.build/
+/.swiftpm/
+/.DS_Store
+**/.DS_Store
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db

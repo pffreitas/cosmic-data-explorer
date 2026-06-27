@@ -1,0 +1,31 @@
+[package]
+name = "cosmic-data-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "cosmic_data_engine"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+directories.workspace = true
+futures-util.workspace = true
+percent-encoding.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+syntect.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6", default-features = false, features = ["apple-native"] }
+
+[dev-dependencies]
+tempfile.workspace = true

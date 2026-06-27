@@ -1,0 +1,601 @@
+import {
+    Button,
+    HorizontalBox,
+    StandardTableView,
+    TextEdit,
+    VerticalBox,
+} from "std-widgets.slint";
+
+component ConnectionRow inherits Rectangle {
+    in property <string> connection-name;
+    in property <string> connection-detail;
+    in property <string> shortcut;
+    in property <bool> selected;
+
+    height: 40px;
+    border-radius: 6px;
+    background: selected ? #3a3a3c : transparent;
+
+    HorizontalBox {
+        padding-left: 10px;
+        padding-right: 8px;
+        spacing: 8px;
+        alignment: center;
+
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: selected ? #5c8dff : #6f767f;
+        }
+
+        VerticalBox {
+            spacing: 1px;
+
+            Text {
+                text: connection-name;
+            color: selected ? #f5f5f7 : #d7d7dc;
+                font-size: 12px;
+                font-weight: selected ? 700 : 500;
+            }
+
+            Text {
+                text: connection-detail;
+            color: #8e8e93;
+                font-size: 10px;
+            }
+        }
+
+        Text {
+            text: shortcut;
+            color: #aeaeb2;
+            font-size: 11px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component SettingsNavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+
+    height: 32px;
+    border-radius: 6px;
+    background: selected ? #0a84ff : transparent;
+
+    Text {
+        x: 13px;
+        text: label;
+        color: selected ? #ffffff : #d1d1d6;
+        font-size: 13px;
+        font-weight: selected ? 700 : 500;
+        vertical-alignment: center;
+    }
+}
+
+component SettingsRow inherits Rectangle {
+    in property <string> title;
+    in property <string> description;
+    in property <string> value;
+
+    height: 56px;
+    border-radius: 8px;
+    background: #2c2c2e;
+
+    HorizontalBox {
+        padding-left: 14px;
+        padding-right: 12px;
+        alignment: center;
+
+        VerticalBox {
+            spacing: 3px;
+
+            Text {
+                text: title;
+                color: #f5f5f7;
+                font-size: 13px;
+                font-weight: 700;
+            }
+
+            Text {
+                text: description;
+                color: #98989d;
+                font-size: 11px;
+            }
+        }
+
+        Text {
+            text: value;
+            color: #d1d1d6;
+            font-size: 12px;
+            font-weight: 600;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    in-out property <string> query-text;
+    in-out property <string> status-text;
+    in-out property <bool> settings-open: false;
+
+    callback execute-query(string);
+
+    title: "Cosmic Data Explorer";
+    width: 1180px;
+    height: 760px;
+    background: #1c1c1e;
+
+    HorizontalBox {
+        spacing: 0px;
+
+        Rectangle {
+            width: 234px;
+            // macos-material-ready
+            background: #1e1e20;
+            border-color: #38383a;
+            border-width: 1px;
+
+            VerticalBox {
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 10px;
+
+                // macos-titlebar-reserved
+                Rectangle {
+                    height: 34px;
+                    background: transparent;
+
+                    HorizontalBox {
+                        padding-left: 2px;
+                        padding-right: 2px;
+                        spacing: 8px;
+                        alignment: center;
+
+                        Text {
+                            text: "Connections";
+                            color: #f2f2f7;
+                            font-size: 13px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        Text {
+                            text: "+";
+                            color: #aeb4bd;
+                            font-size: 18px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                HorizontalBox {
+                    height: 18px;
+                    spacing: 6px;
+                    alignment: center;
+
+                    Text {
+                        text: "Active";
+                        color: #98989d;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Text {
+                        text: "3";
+                        color: #8e8e93;
+                        font-size: 11px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // active-connections
+                ConnectionRow {
+                    connection-name: "Production";
+                    connection-detail: "PostgreSQL  /  warehouse";
+                    shortcut: "^1";
+                    selected: true;
+                }
+
+                ConnectionRow {
+                    connection-name: "Analytics";
+                    connection-detail: "MySQL  /  events";
+                    shortcut: "^2";
+                    selected: false;
+                }
+
+                Text {
+                    text: "Local";
+                    color: #8e8e93;
+                    font-size: 11px;
+                    font-weight: 700;
+                }
+
+                ConnectionRow {
+                    connection-name: "Scratch";
+                    connection-detail: "SQLite  /  scratch.sqlite";
+                    shortcut: "^3";
+                    selected: false;
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // settings-button
+                Rectangle {
+                    height: 40px;
+                    border-radius: 8px;
+                    background: root.settings-open ? #2c2c2e : transparent;
+                    border-color: root.settings-open ? #48484a : transparent;
+                    border-width: 1px;
+
+                    TouchArea {
+                        clicked => {
+                            root.settings-open = true;
+                        }
+                    }
+
+                    HorizontalBox {
+                        padding-left: 12px;
+                        padding-right: 10px;
+                        spacing: 9px;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 14px;
+                            height: 14px;
+                            border-radius: 3px;
+                            border-width: 2px;
+                            border-color: #0a84ff;
+                            background: transparent;
+                        }
+
+                        Text {
+                            text: "Settings";
+                            color: #e5e5ea;
+                            font-size: 12px;
+                            font-weight: 700;
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            background: #242426;
+
+            VerticalBox {
+                spacing: 0px;
+
+                Rectangle {
+                    height: 53px;
+                    background: #202022;
+                    border-color: #38383a;
+                    border-width: 1px;
+
+                    HorizontalBox {
+                        padding-left: 14px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: center;
+
+                        Text {
+                            text: "Cosmic Data Explorer";
+                            color: #f5f5f7;
+                            font-size: 14px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            height: 28px;
+                            width: 184px;
+                            border-radius: 7px;
+                            background: #2c2c2e;
+                            border-color: #48484a;
+                            border-width: 1px;
+
+                            Text {
+                                text: "query.sql";
+                                color: #d1d1d6;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        Text {
+                            text: root.status-text;
+                            color: #98989d;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+
+                VerticalBox {
+                    padding: 14px;
+                    spacing: 12px;
+
+                    Rectangle {
+                        height: 254px;
+                        border-radius: 8px;
+                        background: #2c2c2e;
+                        border-color: #48484a;
+                        border-width: 1px;
+
+                        VerticalBox {
+                            padding: 12px;
+                            spacing: 9px;
+
+                            HorizontalBox {
+                                height: 34px;
+                                alignment: center;
+
+                                Text {
+                                    text: "Query";
+                                    color: #f5f5f7;
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: "Production / warehouse";
+                                    color: #98989d;
+                                    font-size: 12px;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+
+                                Button {
+                                    text: "Run";
+                                    clicked => {
+                                        root.execute-query(root.query-text);
+                                    }
+                                }
+                            }
+
+                            TextEdit {
+                                text <=> root.query-text;
+                                font-size: 14px;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #2c2c2e;
+                        border-color: #48484a;
+                        border-width: 1px;
+
+                        VerticalBox {
+                            padding: 12px;
+                            spacing: 9px;
+
+                            HorizontalBox {
+                                height: 30px;
+
+                                Text {
+                                    text: "Results";
+                                    color: #f5f5f7;
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: "1 row";
+                                    color: #8e8e93;
+                                    font-size: 12px;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            StandardTableView {
+                                columns: [
+                                    { title: "Column" },
+                                    { title: "Value" },
+                                ];
+                                rows: [
+                                    [
+                                        { text: "Status" },
+                                        { text: root.status-text },
+                                    ],
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.settings-open: Rectangle {
+        width: root.width;
+        height: root.height;
+        background: #000000a6;
+
+        TouchArea {
+            clicked => {
+                root.settings-open = false;
+            }
+        }
+
+        Rectangle {
+            x: (root.width - 674px) / 2;
+            y: (root.height - 504px) / 2;
+            width: 674px;
+            height: 504px;
+            border-radius: 14px;
+            // macos-material-ready
+            background: #1c1c1e;
+            border-color: #48484a;
+            border-width: 1px;
+
+            HorizontalBox {
+                spacing: 0px;
+
+                Rectangle {
+                    width: 188px;
+                    background: #202022;
+                    border-color: #38383a;
+                    border-width: 1px;
+
+                    VerticalBox {
+                        padding-left: 12px;
+                        padding-right: 8px;
+                        padding-top: 16px;
+                        padding-bottom: 12px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Settings";
+                            color: #f5f5f7;
+                            font-size: 13px;
+                            font-weight: 700;
+                        }
+
+                        SettingsNavItem { label: "Connections"; selected: true; }
+                        SettingsNavItem { label: "General"; selected: false; }
+                        SettingsNavItem { label: "Shortcuts"; selected: false; }
+                        SettingsNavItem { label: "Updates"; selected: false; }
+
+                        Rectangle { vertical-stretch: 1; }
+
+                        Text {
+                            text: "Local Profiles";
+                            color: #8e8e93;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+
+                        Text {
+                            text: "Production";
+                            color: #d1d1d6;
+                            font-size: 12px;
+                        }
+
+                        Text {
+                            text: "Scratch";
+                            color: #d1d1d6;
+                            font-size: 12px;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    background: #242426;
+
+                    VerticalBox {
+                        padding: 22px;
+                        spacing: 14px;
+
+                        HorizontalBox {
+                            height: 34px;
+                            alignment: center;
+
+                            Text {
+                                text: "Connection Settings";
+                                color: #f5f5f7;
+                                font-size: 18px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+
+                            Button {
+                                text: "Done";
+                                clicked => {
+                                    root.settings-open = false;
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "Configure saved profiles and credentials. Passwords are stored in macOS Keychain.";
+                            color: #98989d;
+                            font-size: 12px;
+                        }
+
+                        SettingsRow {
+                            title: "Production";
+                            description: "PostgreSQL / warehouse / paulo";
+                            value: "Active";
+                        }
+
+                        SettingsRow {
+                            title: "Analytics";
+                            description: "MySQL / events / analyst";
+                            value: "Active";
+                        }
+
+                        SettingsRow {
+                            title: "Scratch";
+                            description: "SQLite / scratch.sqlite";
+                            value: "Local";
+                        }
+
+                        Rectangle {
+                            height: 116px;
+                            border-radius: 8px;
+                            background: #2c2c2e;
+                            border-color: #48484a;
+                            border-width: 1px;
+
+                            VerticalBox {
+                                padding: 14px;
+                                spacing: 8px;
+
+                                Text {
+                                    text: "New Connection";
+                                    color: #f5f5f7;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                }
+
+                                HorizontalBox {
+                                    spacing: 8px;
+
+                                    Text {
+                                        text: "PostgreSQL";
+                                        color: #d1d1d6;
+                                        font-size: 12px;
+                                    }
+
+                                    Text {
+                                        text: "MySQL";
+                                        color: #d1d1d6;
+                                        font-size: 12px;
+                                    }
+
+                                    Text {
+                                        text: "SQLite";
+                                        color: #d1d1d6;
+                                        font-size: 12px;
+                                    }
+
+                                    Button {
+                                        text: "Add Connection";
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
