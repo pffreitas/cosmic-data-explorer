@@ -4,10 +4,13 @@ import Foundation
 import PackageDescription
 
 let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-let bridgeLibraryDirectory = packageDirectory
+let defaultBridgeLibraryDirectory = packageDirectory
     .appendingPathComponent("../../target/debug")
     .standardizedFileURL
     .path
+
+let bridgeLibraryDirectory = ProcessInfo.processInfo.environment["COSMIC_NATIVE_BRIDGE_DIR"]
+    ?? defaultBridgeLibraryDirectory
 
 let package = Package(
     name: "CosmicDataExplorerMac",
