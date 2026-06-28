@@ -404,6 +404,7 @@ pub enum CellValue {
     DateTime(NaiveDateTime),
     Timestamp(DateTime<Utc>),
     Json(serde_json::Value),
+    Uuid(uuid::Uuid),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

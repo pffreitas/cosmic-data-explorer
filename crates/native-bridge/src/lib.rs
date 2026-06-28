@@ -811,6 +811,7 @@ fn display_cell(cell: CellValue) -> String {
         CellValue::DateTime(value) => value.to_string(),
         CellValue::Timestamp(value) => value.to_rfc3339(),
         CellValue::Json(value) => value.to_string(),
+        CellValue::Uuid(value) => value.to_string(),
     }
 }
 
@@ -846,6 +847,16 @@ mod tests {
         assert_eq!(connections[0].kind, "PostgreSQL");
         assert_eq!(connections[1].kind, "MySQL");
         assert_eq!(connections[2].kind, "SQLite");
+    }
+
+    #[test]
+    fn display_cell_formats_uuid_as_canonical_string() {
+        let value = "01234567-89ab-cdef-0123-456789abcdef".parse().unwrap();
+
+        assert_eq!(
+            display_cell(CellValue::Uuid(value)),
+            "01234567-89ab-cdef-0123-456789abcdef"
+        );
     }
 
     #[test]

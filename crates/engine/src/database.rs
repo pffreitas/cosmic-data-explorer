@@ -609,6 +609,9 @@ fn postgres_cell(row: &PgRow, index: usize) -> CellValue {
     if let Ok(value) = row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(index) {
         return value.map(CellValue::Timestamp).unwrap_or(CellValue::Null);
     }
+    if let Ok(value) = row.try_get::<Option<uuid::Uuid>, _>(index) {
+        return value.map(CellValue::Uuid).unwrap_or(CellValue::Null);
+    }
     if let Ok(value) = row.try_get::<Option<serde_json::Value>, _>(index) {
         return value.map(CellValue::Json).unwrap_or(CellValue::Null);
     }
