@@ -1,6 +1,6 @@
 use cosmic_data_engine::{ConnectionConfig, ConnectionProfile, DatabaseKind};
 
-const POSTGRES_URL: &str = "postgres://admin_bees-force-bug-hunt-hackathon:)cbL%2BHH1%26e_A@psqls-beesdev-portal.postgres.database.azure.com/pg-bees-force-bug-hunt-hackathon?sslmode=require&connection_limit=10&pool_timeout=20&connect_timeout=10&statement_timeout=0&idle_in_transaction_session_timeout=0&pgbouncer=true&statement_cache_size=0&server_lifetime=3600&server_idle_timeout=900";
+const POSTGRES_URL: &str = "postgres://test_user:)cbL%2BHH1%26e_A@fake-postgres.example.com/fake_database?sslmode=require&connection_limit=10&pool_timeout=20&connect_timeout=10&statement_timeout=0&idle_in_transaction_session_timeout=0&pgbouncer=true&statement_cache_size=0&server_lifetime=3600&server_idle_timeout=900";
 
 #[test]
 fn postgres_connection_string_creates_sanitized_profile_and_extracts_password() {
@@ -16,7 +16,7 @@ fn postgres_connection_string_creates_sanitized_profile_and_extracts_password() 
         panic!("expected postgres URL config");
     };
 
-    assert!(url.starts_with("postgres://admin_bees-force-bug-hunt-hackathon@"));
+    assert!(url.starts_with("postgres://test_user@"));
     assert!(url.contains("sslmode=require"));
     assert!(url.contains("pgbouncer=true"));
     assert!(url.contains("server_idle_timeout=900"));
